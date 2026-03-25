@@ -16,6 +16,9 @@ body { font-family: Arial; background:#f5f5f5; padding:20px; text-align:center; 
 button { width:100%; padding:12px; margin:5px 0; border-radius:10px; border:none; background:#2563eb; color:white; }
 .logo { max-height:150px; margin-bottom:10px; }
 .hidden { display:none; }
+.counter { display:flex; justify-content:space-between; align-items:center; margin:10px 0; }
+.counter button { width:30%; }
+.counter span { font-size:22px; }
 </style>
 </head>
 <body>
@@ -23,26 +26,14 @@ button { width:100%; padding:12px; margin:5px 0; border-radius:10px; border:none
 <img src="logo.png" class="logo" />
 <h1>Mädchenbasketball Monitoring</h1>
 
-<!-- START SCREEN -->
 <div id="startScreen" class="card">
   <h3>Ich bin...</h3>
   <button onclick="selectRole('trainer')">Lehrer-Trainerin</button>
-  <button onclick="selectRole('coach')">Vereinstrainer*in</button>
   <button onclick="selectRole('athlete')">Athletin</button>
 </div>
 
-<!-- LOGIN -->
-<div id="loginBox" class="card hidden">
-  <h3>Login</h3>
-  <input id="email" placeholder="E-Mail">
-  <input id="password" type="password" placeholder="Passwort">
-  <button onclick="login()">Login</button>
-</div>
-
-<!-- APP -->
 <div id="app" class="hidden">
 
-  <!-- ATHLETIN ANLEGEN -->
   <div class="card" id="createBox">
     <h3>Athletin anlegen</h3>
     <input id="name" placeholder="Name">
@@ -65,9 +56,13 @@ button { width:100%; padding:12px; margin:5px 0; border-radius:10px; border:none
     <button onclick="createAthlete()">Athletin erstellen</button>
   </div>
 
-  <div id="athletes"></div>
+  <div id="qrBox" class="card hidden">
+    <h3>Zugang Athletin</h3>
+    <canvas id="qrCanvas"></canvas>
+    <p id="codeText"></p>
+  </div>
 
-</div>
+  <div id="athletes"></div>
 </div>
 
 <script>
@@ -76,54 +71,18 @@ const firebaseConfig = {
   authDomain: "YOUR_DOMAIN",
   projectId: "YOUR_PROJECT_ID"
 };
+
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-const auth = firebase.auth();
-
-let selectedRole = null;
-let adminMode = false;
 
 function selectRole(role) {
-  selectedRole = role;
+  document.getElementById("startScreen").classList.add("hidden");
 
-  // Trainerin = direkter Zugang ohne Login
   if (role === "trainer") {
-    adminMode = true;
-    document.getElementById("startScreen").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
     loadAthletes();
-    return;
-  }
-
-  // andere Rollen → Login
-  document.getElementById("startScreen").classList.add("hidden");
-  document.getElementById("loginBox").classList.remove("hidden");
-}
-
-async function login() {
-  const email = document.getElementById("email").value;
-  const password = document.getElementById("password").value;
-
-  try {
-    await auth.signInWithEmailAndPassword(email, password);
-  } catch (e) {
-    alert("Login fehlgeschlagen");
   }
 }
-
-auth.onAuthStateChanged(async user => {
-  if (!user) return;
-
-  document.getElementById("loginBox").classList.add("hidden");
-  document.getElementById("app").classList.remove("hidden");
-
-  const doc = await db.collection("users").doc(user.uid).get();
-  const role = doc.data().role;
-  const club = doc.data().club;
-
-  if (role === "trainer") loadAthletes();
-  if (role === "coach") loadAthletes(club);
-});
 
 async function createAthlete() {
   const accessCode = Math.random().toString(36).substring(2,8);
@@ -138,69 +97,37 @@ async function createAthlete() {
 
   const qrLink = window.location.href + "?athlete=" + docRef.id + "&code=" + accessCode;
 
-  alert("Athletin erstellt!
-Zugangscode: " + accessCode);
+  document.getElementById("qrBox").classList.remove("hidden");
+  document.getElementById("codeText").innerText = "Code: " + accessCode;
+  QRCode.toCanvas(document.getElementById("qrCanvas"), qrLink);
 
   loadAthletes();
 }
 
-function getColor(avg) {
-  if (avg <= 2.5) return "#22c55e";
-  if (avg <= 3.5) return "#eab308";
-  if (avg <= 4.5) return "#f97316";
-  return "#ef4444";
-}
-
-async function loadAthletes(forceClub=null) {
+async function loadAthletes() {
   const container = document.getElementById("athletes");
   container.innerHTML = "";
 
-  const filter = forceClub || document.getElementById("clubFilter").value;
+  const snapshot = await db.collection("athletes").get();
 
-  let query = db.collection("athletes");
-  if (filter) query = query.where("club","==",filter);
-
-  const snapshot = await query.get();
-
-  for (const doc of snapshot.docs) {
+  snapshot.forEach(doc => {
     const data = doc.data();
-
-    const entries = await db.collection("entries")
-      .where("athleteId","==",doc.id)
-      .orderBy("date","asc")
-      .get();
-
-    const list = entries.docs.map(d => d.data());
-
-    let avg = null;
-    if (list.length >= 3) {
-      const last3 = list.slice(-3);
-      avg = last3.reduce((a,b)=>a+b.avg,0)/3;
-    }
 
     const div = document.createElement("div");
     div.className = "card";
-    div.style.background = avg ? getColor(avg) : "gray";
-    div.style.color = "white";
 
     div.innerHTML = `
       <h3>${data.name}</h3>
       <p>${data.club}</p>
-      <p>${avg ? avg.toFixed(2) : "-"}</p>
+      <button onclick="event.stopPropagation(); deleteAthlete('${doc.id}')">❌ Löschen</button>
+      <canvas id="qr-${doc.id}"></canvas>
     `;
-
-    div.onclick = () => showHistory(doc.id, data.name);
-
-    const delBtn = document.createElement("button");
-    delBtn.innerText = "❌ Löschen";
-    delBtn.onclick = (e) => { e.stopPropagation(); deleteAthlete(doc.id); };
-    div.appendChild(delBtn);
 
     container.appendChild(div);
 
     const qrLink = window.location.href + "?athlete=" + doc.id + "&code=" + data.accessCode;
     QRCode.toCanvas(document.getElementById(`qr-${doc.id}`), qrLink);
-  }
+  });
 }
 
 async function deleteAthlete(id) {
@@ -214,42 +141,63 @@ async function deleteAthlete(id) {
   loadAthletes();
 }
 
-async function showHistory(id, name) {
-  const snapshot = await db.collection("entries")
-    .where("athleteId","==",id)
-    .orderBy("date","asc")
-    .get();
+// ATHLET VIEW
+const params = new URLSearchParams(window.location.search);
+const athleteId = params.get("athlete");
 
-  let rows = "";
+if (athleteId) {
+  document.body.innerHTML = `
+    <h2>Daily Check</h2>
 
-  snapshot.forEach(doc => {
-    const d = doc.data();
-    const date = new Date(d.date.seconds * 1000).toLocaleDateString();
+    <div class="counter">
+      <button onclick="change('sleep',-1)">-</button>
+      <span id="sleep">3</span>
+      <button onclick="change('sleep',1)">+</button>
+    </div>
 
-    rows += `<tr>
-      <td>${date}</td>
-      <td>${d.sleep}</td>
-      <td>${d.academic}</td>
-      <td>${d.load}</td>
-      <td>${d.avg.toFixed(2)}</td>
-    </tr>`;
+    <div class="counter">
+      <button onclick="change('academic',-1)">-</button>
+      <span id="academic">3</span>
+      <button onclick="change('academic',1)">+</button>
+    </div>
+
+    <div class="counter">
+      <button onclick="change('load',-1)">-</button>
+      <span id="load">3</span>
+      <button onclick="change('load',1)">+</button>
+    </div>
+
+    <button onclick="submit('${athleteId}')">Speichern</button>
+  `;
+}
+
+function change(field, delta) {
+  const el = document.getElementById(field);
+  let val = parseInt(el.innerText);
+  val += delta;
+  if (val < 1) val = 1;
+  if (val > 6) val = 6;
+  el.innerText = val;
+}
+
+async function submit(id) {
+  const sleep = parseInt(document.getElementById("sleep").innerText);
+  const academic = parseInt(document.getElementById("academic").innerText);
+  const load = parseInt(document.getElementById("load").innerText);
+
+  const avg = (sleep + academic + load) / 3;
+
+  await db.collection("entries").add({
+    athleteId: id,
+    sleep,
+    academic,
+    load,
+    avg,
+    date: new Date()
   });
 
-  const win = window.open("", "_blank");
-  win.document.write(`
-    <h2>${name}</h2>
-    <table border="1" style="width:100%">
-    <tr><th>Datum</th><th>Schlaf</th><th>Schule</th><th>Belastung</th><th>Ø</th></tr>
-    ${rows}
-    </table>
-    <button onclick="window.print()">PDF</button>
-  `);
+  alert("Gespeichert");
 }
-
-async function loadTrainerDashboard() {
-  alert("Dashboard bleibt wie zuvor implementiert");
-}
-
 </script>
 
 </body>
