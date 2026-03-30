@@ -65,6 +65,7 @@ canvas { max-width:100%; }
   </select>
 
   <input id="training" type="text" placeholder="Trainings pro Woche">
+  <input id="schoolYear" type="text" placeholder="Seit wann auf der Schule (z.B. 2022/23)">
   <button onclick="createAthlete()">Athletin erstellen</button>
 </div>
 
@@ -132,8 +133,9 @@ function createAthlete() {
   const birthdate = document.getElementById("birthdate").value;
   const club = document.getElementById("club").value;
   const training = document.getElementById("training").value;
+  const schoolYear = document.getElementById("schoolYear").value;
 
-  if (!name || !birthdate || !club || !training) {
+  if (!name || !birthdate || !club || !training || !schoolYear) {
     alert("Bitte alles ausfüllen");
     return;
   }
@@ -141,7 +143,7 @@ function createAthlete() {
   const id = Date.now().toString();
   const accessCode = Math.random().toString(36).substring(2,8);
 
-  athletes.push({ id, name, birthdate, club, training, accessCode });
+  athletes.push({ id, name, birthdate, club, training, schoolYear, accessCode });
   saveData();
 
   const qrLink = window.location.href.split("?")[0] + "?athlete=" + id + "&code=" + accessCode;
@@ -190,6 +192,7 @@ function showOverview() {
     div.innerHTML = `
       <h3>${a.name}</h3>
       <p>${a.club}</p>
+      <p>Schule seit: ${a.schoolYear || '-'} </p>
       <div class="badge" style="background:${color}">Status</div>
       <button onclick="showHistory('${a.id}')">Verlauf anzeigen</button>
       <button onclick="deleteAthlete('${a.id}')">❌ Löschen</button>
